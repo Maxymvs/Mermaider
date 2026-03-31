@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mermaid Diagram Renderer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #0f0f17;
+      color: #c8cad8;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 20px 32px;
+      border-bottom: 1px solid #1e1e2e;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e2e4f0;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: auto;
+    }
+
+    select {
+      background: #1a1b2e;
+      color: #c8cad8;
+      border: 1px solid #2a2b3e;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    select:hover { border-color: #7aa2f7; }
+
+    .layout {
+      display: flex;
+      height: calc(100vh - 65px);
+    }
+
+    .editor-pane {
+      width: 420px;
+      min-width: 320px;
+      border-right: 1px solid #1e1e2e;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drop-zone {
+      padding: 16px;
+      border-bottom: 1px solid #1e1e2e;
+    }
+
+    .drop-area {
+      border: 2px dashed #2a2b3e;
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .drop-area:hover, .drop-area.dragover {
+      border-color: #7aa2f7;
+      background: rgba(122, 162, 247, 0.05);
+    }
+
+    .drop-area p {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .drop-area .hint {
+      font-size: 11px;
+      color: #444;
+      margin-top: 6px;
+    }
+
+    .block-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .block-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s;
+    }
+
+    .block-item:hover { background: #1a1b2e; }
+    .block-item.active { background: #1e2040; color: #7aa2f7; }
+
+    .block-item .type-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #1e2040;
+      color: #7aa2f7;
+      font-weight: 600;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .block-item.active .type-badge {
+      background: #7aa2f7;
+      color: #0f0f17;
+    }
+
+    .preview-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .preview-toolbar {
+      padding: 10px 16px;
+      border-bottom: 1px solid #1e1e2e;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .preview-toolbar .title {
+      font-weight: 600;
+      color: #e2e4f0;
+    }
+
+    .preview-toolbar .spacer { flex: 1; }
+
+    button {
+      background: #1a1b2e;
+      color: #c8cad8;
+      border: 1px solid #2a2b3e;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    button:hover { border-color: #7aa2f7; color: #7aa2f7; }
+
+    .svg-container {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .svg-container.panning { cursor: grabbing; }
+
+    .svg-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    .svg-canvas svg {
+      display: block;
+      border-radius: 8px;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: #444;
+      font-size: 14px;
+    }
+
+    .empty-state .icon { font-size: 48px; opacity: 0.3; }
+
+    .error-msg {
+      background: #2d1520;
+      color: #f7768e;
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin: 16px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      white-space: pre-wrap;
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid #2a2b3e;
+      border-top-color: #7aa2f7;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    input[type="file"] { display: none; }
+
+    .zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .zoom-controls button {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .zoom-level {
+      font-size: 11px;
+      color: #666;
+      min-width: 40px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .zoom-hint {
+      font-size: 11px;
+      color: #444;
+      margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Mermaid Diagram Renderer</h1>
+    <div class="controls">
+      <label for="theme-select" style="font-size:13px;">Theme:</label>
+      <select id="theme-select"></select>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="editor-pane">
+      <div class="drop-zone">
+        <div class="drop-area" id="drop-area">
+          <p>Drop .md or .mmd file here</p>
+          <p class="hint">or click to browse</p>
+          <input type="file" id="file-input" accept=".md,.mmd,.markdown,.txt" />
+        </div>
+      </div>
+      <div class="block-list" id="block-list"></div>
+    </div>
+
+    <div class="preview-pane">
+      <div class="preview-toolbar" id="preview-toolbar" style="display:none;">
+        <span class="title" id="preview-title"></span>
+        <span class="spacer"></span>
+        <div class="zoom-controls">
+          <button id="zoom-out" title="Zoom out">&minus;</button>
+          <span class="zoom-level" id="zoom-level">100%</span>
+          <button id="zoom-in" title="Zoom in">+</button>
+          <button id="zoom-reset" title="Fit to view">Fit</button>
+        </div>
+        <span class="zoom-hint">Scroll to zoom, drag to pan</span>
+        <button id="download-btn">Download SVG</button>
+        <button id="download-all-btn">Download All</button>
+      </div>
+      <div class="svg-container" id="svg-container">
+        <div class="svg-canvas" id="svg-canvas"></div>
+        <div class="empty-state" id="empty-state">
+          <div class="icon">&#9653;</div>
+          <div>Upload a markdown file with mermaid diagrams</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const dropArea = document.getElementById('drop-area');
+    const fileInput = document.getElementById('file-input');
+    const blockList = document.getElementById('block-list');
+    const svgContainer = document.getElementById('svg-container');
+    const svgCanvas = document.getElementById('svg-canvas');
+    const emptyState = document.getElementById('empty-state');
+    const previewToolbar = document.getElementById('preview-toolbar');
+    const previewTitle = document.getElementById('preview-title');
+    const themeSelect = document.getElementById('theme-select');
+    const downloadBtn = document.getElementById('download-btn');
+    const downloadAllBtn = document.getElementById('download-all-btn');
+    const zoomInBtn = document.getElementById('zoom-in');
+    const zoomOutBtn = document.getElementById('zoom-out');
+    const zoomResetBtn = document.getElementById('zoom-reset');
+    const zoomLevelEl = document.getElementById('zoom-level');
+
+    let blocks = [];
+    let renderedSVGs = {};
+    let activeIndex = -1;
+
+    // --- Pan & Zoom state ---
+    const MIN_ZOOM = 0.1;
+    const MAX_ZOOM = 10;
+    const ZOOM_STEP = 1.15;
+
+    let scale = 1;
+    let panX = 0;
+    let panY = 0;
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let panOriginX = 0;
+    let panOriginY = 0;
+
+    function applyTransform() {
+      svgCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+      zoomLevelEl.textContent = `${Math.round(scale * 100)}%`;
+    }
+
+    function zoomAtPoint(newScale, cx, cy) {
+      newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newScale));
+      // Adjust pan so the point under the cursor stays fixed
+      panX = cx - (cx - panX) * (newScale / scale);
+      panY = cy - (cy - panY) * (newScale / scale);
+      scale = newScale;
+      applyTransform();
+    }
+
+    function fitToView() {
+      const svg = svgCanvas.querySelector('svg');
+      if (!svg) return;
+      const containerRect = svgContainer.getBoundingClientRect();
+      const svgW = svg.viewBox.baseVal.width || svg.getBoundingClientRect().width;
+      const svgH = svg.viewBox.baseVal.height || svg.getBoundingClientRect().height;
+      const padding = 48;
+      const fitScale = Math.min(
+        (containerRect.width - padding) / svgW,
+        (containerRect.height - padding) / svgH,
+        2 // don't upscale tiny diagrams beyond 2x
+      );
+      scale = fitScale;
+      panX = (containerRect.width - svgW * scale) / 2;
+      panY = (containerRect.height - svgH * scale) / 2;
+      applyTransform();
+    }
+
+    // Scroll to zoom (pinch on trackpad works too)
+    svgContainer.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = svgContainer.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const direction = e.deltaY < 0 ? 1 : -1;
+      const factor = Math.pow(ZOOM_STEP, direction);
+      zoomAtPoint(scale * factor, cx, cy);
+    }, { passive: false });
+
+    // Mouse drag to pan
+    svgContainer.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      isPanning = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      panOriginX = panX;
+      panOriginY = panY;
+      svgContainer.classList.add('panning');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isPanning) return;
+      panX = panOriginX + (e.clientX - panStartX);
+      panY = panOriginY + (e.clientY - panStartY);
+      applyTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      isPanning = false;
+      svgContainer.classList.remove('panning');
+    });
+
+    // Touch support for mobile/trackpad
+    let lastTouchDist = 0;
+    let lastTouchCenter = { x: 0, y: 0 };
+
+    svgContainer.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        isPanning = true;
+        panStartX = e.touches[0].clientX;
+        panStartY = e.touches[0].clientY;
+        panOriginX = panX;
+        panOriginY = panY;
+      } else if (e.touches.length === 2) {
+        isPanning = false;
+        lastTouchDist = getTouchDist(e.touches);
+        lastTouchCenter = getTouchCenter(e.touches);
+      }
+    }, { passive: true });
+
+    svgContainer.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && isPanning) {
+        panX = panOriginX + (e.touches[0].clientX - panStartX);
+        panY = panOriginY + (e.touches[0].clientY - panStartY);
+        applyTransform();
+      } else if (e.touches.length === 2) {
+        const dist = getTouchDist(e.touches);
+        const center = getTouchCenter(e.touches);
+        const rect = svgContainer.getBoundingClientRect();
+        const cx = center.x - rect.left;
+        const cy = center.y - rect.top;
+        const factor = dist / lastTouchDist;
+        zoomAtPoint(scale * factor, cx, cy);
+        lastTouchDist = dist;
+        lastTouchCenter = center;
+      }
+    }, { passive: false });
+
+    svgContainer.addEventListener('touchend', () => { isPanning = false; });
+
+    function getTouchDist(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function getTouchCenter(touches) {
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2,
+      };
+    }
+
+    // Double-click to reset view
+    svgContainer.addEventListener('dblclick', () => fitToView());
+
+    // Toolbar zoom buttons
+    zoomInBtn.addEventListener('click', () => {
+      const rect = svgContainer.getBoundingClientRect();
+      zoomAtPoint(scale * ZOOM_STEP, rect.width / 2, rect.height / 2);
+    });
+    zoomOutBtn.addEventListener('click', () => {
+      const rect = svgContainer.getBoundingClientRect();
+      zoomAtPoint(scale / ZOOM_STEP, rect.width / 2, rect.height / 2);
+    });
+    zoomResetBtn.addEventListener('click', fitToView);
+
+    // --- Load themes ---
+    fetch('/api/themes')
+      .then(r => r.json())
+      .then(themes => {
+        themes.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          if (t === 'tokyo-night') opt.selected = true;
+          themeSelect.appendChild(opt);
+        });
+      });
+
+    themeSelect.addEventListener('change', () => {
+      renderedSVGs = {};
+      if (activeIndex >= 0) renderBlock(activeIndex);
+    });
+
+    // --- File handling ---
+    dropArea.addEventListener('click', () => fileInput.click());
+    dropArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropArea.classList.add('dragover');
+    });
+    dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
+    dropArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropArea.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    function handleFile(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result;
+        const ext = file.name.split('.').pop().toLowerCase();
+        blocks = ext === 'mmd'
+          ? [{ title: file.name.replace(/\.mmd$/, ''), content: text, type: detectType(text) }]
+          : extractMermaidBlocks(text);
+
+        renderedSVGs = {};
+        renderBlockList();
+        if (blocks.length > 0) {
+          selectBlock(0);
+        } else {
+          svgCanvas.innerHTML = '';
+          emptyState.style.display = 'flex';
+          emptyState.querySelector('div:last-child').textContent = 'No mermaid blocks found in this file';
+          previewToolbar.style.display = 'none';
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function extractMermaidBlocks(md) {
+      const headingRegex = /^##\s+(.+)$/gm;
+      const mermaidRegex = /```mermaid\n([\s\S]*?)```/g;
+
+      const headings = [];
+      let m;
+      while ((m = headingRegex.exec(md)) !== null) {
+        headings.push({ title: m[1], index: m.index });
+      }
+
+      const result = [];
+      let i = 0;
+      while ((m = mermaidRegex.exec(md)) !== null) {
+        const preceding = headings.filter(h => h.index < m.index).pop();
+        const title = preceding ? preceding.title : `Diagram ${++i}`;
+        const content = m[1];
+        result.push({ title, content, type: detectType(content) });
+      }
+      return result;
+    }
+
+    function detectType(content) {
+      const first = content.trim().split('\n')[0].trim().toLowerCase();
+      if (first.startsWith('sequencediagram')) return 'sequence';
+      if (first.startsWith('classd')) return 'class';
+      if (first.startsWith('erdiagram')) return 'er';
+      if (first.startsWith('stated')) return 'state';
+      if (first.startsWith('xychart')) return 'xy';
+      if (first.startsWith('graph') || first.startsWith('flowchart')) return 'flow';
+      return 'flow';
+    }
+
+    function renderBlockList() {
+      blockList.innerHTML = '';
+      blocks.forEach((block, i) => {
+        const el = document.createElement('div');
+        el.className = 'block-item';
+        el.innerHTML = `<span class="type-badge">${block.type}</span> ${block.title}`;
+        el.addEventListener('click', () => selectBlock(i));
+        blockList.appendChild(el);
+      });
+    }
+
+    function selectBlock(index) {
+      activeIndex = index;
+      document.querySelectorAll('.block-item').forEach((el, i) => {
+        el.classList.toggle('active', i === index);
+      });
+      previewToolbar.style.display = 'flex';
+      previewTitle.textContent = blocks[index].title;
+      renderBlock(index);
+    }
+
+    async function renderBlock(index) {
+      const theme = themeSelect.value;
+      const cacheKey = `${index}:${theme}`;
+
+      if (renderedSVGs[cacheKey]) {
+        showSVG(renderedSVGs[cacheKey]);
+        return;
+      }
+
+      svgCanvas.innerHTML = '';
+      emptyState.style.display = 'flex';
+      emptyState.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const res = await fetch('/api/render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mermaid: blocks[index].content, theme }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          emptyState.innerHTML = `<div class="error-msg">${data.error}</div>`;
+        } else {
+          renderedSVGs[cacheKey] = data.svg;
+          showSVG(data.svg);
+        }
+      } catch (err) {
+        emptyState.innerHTML = `<div class="error-msg">${err.message}</div>`;
+      }
+    }
+
+    function showSVG(svgStr) {
+      emptyState.style.display = 'none';
+      svgCanvas.innerHTML = svgStr;
+      // Reset transform then fit
+      scale = 1;
+      panX = 0;
+      panY = 0;
+      applyTransform();
+      // Wait a frame for layout, then fit
+      requestAnimationFrame(fitToView);
+    }
+
+    // --- Download ---
+    downloadBtn.addEventListener('click', () => {
+      const theme = themeSelect.value;
+      const cacheKey = `${activeIndex}:${theme}`;
+      const svg = renderedSVGs[cacheKey];
+      if (!svg) return;
+      downloadFile(`${slugify(blocks[activeIndex].title)}.svg`, svg, 'image/svg+xml');
+    });
+
+    downloadAllBtn.addEventListener('click', async () => {
+      const theme = themeSelect.value;
+      for (let i = 0; i < blocks.length; i++) {
+        const cacheKey = `${i}:${theme}`;
+        if (!renderedSVGs[cacheKey]) {
+          const res = await fetch('/api/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mermaid: blocks[i].content, theme }),
+          });
+          const data = await res.json();
+          if (!data.error) renderedSVGs[cacheKey] = data.svg;
+        }
+        if (renderedSVGs[cacheKey]) {
+          downloadFile(`${slugify(blocks[i].title)}.svg`, renderedSVGs[cacheKey], 'image/svg+xml');
+        }
+      }
+    });
+
+    function downloadFile(name, content, type) {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function slugify(str) {
+      return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    }
+  </script>
+</body>
+</html>

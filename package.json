@@ -1,0 +1,12 @@
+{
+  "name": "diagram-renderer",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs",
+    "dev": "node server.mjs"
+  },
+  "dependencies": {
+    "beautiful-mermaid": "^1.1.3"
+  }
+}
